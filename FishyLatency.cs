@@ -14,6 +14,7 @@ namespace BeardedMonkeys
         [SerializeField] Transport m_transport;
 
         [Header("Settings")]
+        [SerializeField] bool m_enabled = true;
         [Range(0, 1)]
         [SerializeField] float m_latency = 0f;        
         [Range(0, 1)]
@@ -63,18 +64,14 @@ namespace BeardedMonkeys
             m_transport.OnRemoteConnectionState += OnRemoteConnectionState;
             m_transport.OnClientReceivedData += OnClientReceivedData;
             m_transport.OnServerReceivedData += OnServerReceivedData;
-
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
             InstanceFinder.TimeManager.OnPreTick += OnPreTick;
+#endif
         }
 
         private void OnPreTick()
         {
             Simulation();
-        }
-
-        private void Update()
-        {
-            
         }
 
         private void OnDestroy()
@@ -194,7 +191,14 @@ namespace BeardedMonkeys
         /// /// <param name="segment">Data to send.</param>
         public override void SendToServer(byte channelId, ArraySegment<byte> segment)
         {
-            Add(channelId, segment);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if(m_enabled)
+                Add(channelId, segment);
+            else
+                m_transport.SendToServer(channelId, segment);
+#else
+            m_transport.SendToServer(channelId, segment);
+#endif
         }
         /// <summary>
         /// Sends data to a client.
@@ -204,7 +208,14 @@ namespace BeardedMonkeys
         /// <param name="connectionId"></param>
         public override void SendToClient(byte channelId, ArraySegment<byte> segment, int connectionId)
         {
-            Add(channelId, segment, true, connectionId);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (m_enabled)
+                Add(channelId, segment, true, connectionId);
+            else
+                m_transport.SendToClient(channelId, segment, connectionId);
+#else
+            m_transport.SendToClient(channelId, segment, connectionId);
+#endif
         }
         #endregion
 
@@ -282,7 +293,7 @@ namespace BeardedMonkeys
         {
             return m_transport.GetTimeout(asServer);
         }
-        #endregion
+#endregion
 
         #region Start and Stop
         /// <summary>
@@ -323,10 +334,13 @@ namespace BeardedMonkeys
             m_transport.OnRemoteConnectionState -= OnRemoteConnectionState;
             m_transport.OnClientReceivedData -= OnClientReceivedData;
             m_transport.OnServerReceivedData -= OnServerReceivedData;
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
             InstanceFinder.TimeManager.OnPreTick -= OnPreTick;
 
             m_clientToServerMessages.Clear();
             m_serverToClientMessages.Clear();
+#endif
 
             //Stops client then server connections.
             StopConnection(false);
