@@ -1,6 +1,7 @@
 # FishyLatency
 
-A latency simulation transport for Fish-Net.
+A latency simulation transport for Fish-Net. It's a middle in the man transport, which simulates latency and packet drops. 
+To make it work you need your **Main Transport**, **Transport Manager** and of course **FishyLatency**.
 
 ## Dependencies
 1. **[Fish-Net](https://github.com/FirstGearGames/FishNet)**
