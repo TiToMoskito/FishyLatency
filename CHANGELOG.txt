@@ -1,2 +1,6 @@
 1.0.0
 	- Initial release.
+1.0.1
+	- Added a Enabled variable, to enable or disable the simulation
+	- Added a check if it accidentally was put in a release build (Thanks to Punfish)
+	- Code cleaned
