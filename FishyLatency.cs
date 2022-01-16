@@ -23,7 +23,7 @@ namespace BeardedMonkeys
 
         [Tooltip("Additional amount of latency for reliable packets only when a packet get's lossed!")]
         [Range(0, 1)]
-        [SerializeField] float m_reliableLatency = 0.2f;
+        [SerializeField] float m_reliableLatency = 0.02f;
 
         [Tooltip("How many % should be a packet loss")]
         [Range(0, 1)]

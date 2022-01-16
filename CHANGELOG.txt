@@ -8,3 +8,5 @@
 	- Fixed the simulation for dropping reliable packets by adding additional latency to it
 	- Fixed release build checks
 	- Code restructured
+1.1.1
+	- Adjusted the Reliable Latency variable to 0.02f (was unsaved uploaded)
