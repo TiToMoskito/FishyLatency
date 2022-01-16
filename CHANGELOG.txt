@@ -4,3 +4,7 @@
 	- Added a Enabled variable, to enable or disable the simulation
 	- Added a check if it accidentally was put in a release build (Thanks to Punfish)
 	- Code cleaned
+1.1.0
+	- Fixed the simulation for dropping reliable packets by adding additional latency to it
+	- Fixed release build checks
+	- Code restructured

@@ -14,9 +14,18 @@ namespace BeardedMonkeys
         [SerializeField] Transport m_transport;
 
         [Header("Settings")]
+        [Tooltip("Enable or disable the simulation")]
         [SerializeField] bool m_enabled = true;
+
+        [Tooltip("Additional amount of latency for all packets")]
         [Range(0, 1)]
-        [SerializeField] float m_latency = 0f;        
+        [SerializeField] float m_latency = 0f;
+
+        [Tooltip("Additional amount of latency for reliable packets only when a packet get's lossed!")]
+        [Range(0, 1)]
+        [SerializeField] float m_reliableLatency = 0.2f;
+
+        [Tooltip("How many % should be a packet loss")]
         [Range(0, 1)]
         [SerializeField] double m_packetloss = 0;
         #endregion
@@ -47,6 +56,11 @@ namespace BeardedMonkeys
             {
                 return new ArraySegment<byte>(message, 0, length);
             }
+
+            public void AddLatency(float latency)
+            {
+                this.time += latency;
+            }
         }
 
         private readonly System.Random m_random = new System.Random();
@@ -64,14 +78,6 @@ namespace BeardedMonkeys
             m_transport.OnRemoteConnectionState += OnRemoteConnectionState;
             m_transport.OnClientReceivedData += OnClientReceivedData;
             m_transport.OnServerReceivedData += OnServerReceivedData;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            InstanceFinder.TimeManager.OnPreTick += OnPreTick;
-#endif
-        }
-
-        private void OnPreTick()
-        {
-            Simulation();
         }
 
         private void OnDestroy()
@@ -152,7 +158,11 @@ namespace BeardedMonkeys
         /// <param name="server">True to process data received on the server.</param>
         public override void IterateOutgoing(bool server)
         {
-            
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            Simulation(server);            
+#else
+            m_transport.IterateOutgoing(server);
+#endif
         }
         #endregion
 
@@ -336,8 +346,6 @@ namespace BeardedMonkeys
             m_transport.OnServerReceivedData -= OnServerReceivedData;
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            InstanceFinder.TimeManager.OnPreTick -= OnPreTick;
-
             m_clientToServerMessages.Clear();
             m_serverToClientMessages.Clear();
 #endif
@@ -385,32 +393,60 @@ namespace BeardedMonkeys
                 m_clientToServerMessages.Add(new Message(channelId, connectionId, segment, m_latency));
         }
 
-        private void Simulation()
+        private void Simulation(bool server)
         {
-            // Packet drop
-            if (m_packetloss > 0 && m_random.NextDouble() < m_packetloss) return;
-
-            for (int i = 0; i < m_clientToServerMessages.Count; i++)
+            if(server)
             {
-                if (m_clientToServerMessages[i].time <= Time.time)
+                for (int i = 0; i < m_serverToClientMessages.Count; i++)
                 {
-                    m_transport.SendToServer(m_clientToServerMessages[i].channelId, m_clientToServerMessages[i].GetSegment());
-                    m_clientToServerMessages.RemoveAt(i);
+                    if (CheckReliablePacketLoss(m_serverToClientMessages[i]))
+                        break;
+
+                    if (m_serverToClientMessages[i].time <= Time.time)
+                    {
+                        m_transport.SendToClient(m_serverToClientMessages[i].channelId, m_serverToClientMessages[i].GetSegment(), m_serverToClientMessages[i].connectionId);
+                        m_serverToClientMessages.RemoveAt(i);
+                    }
+                }                
+            }
+            else
+            {
+                for (int i = 0; i < m_clientToServerMessages.Count; i++)
+                {
+                    if (CheckReliablePacketLoss(m_clientToServerMessages[i]))
+                        break;
+
+                    if (m_clientToServerMessages[i].time <= Time.time)
+                    {
+                        m_transport.SendToServer(m_clientToServerMessages[i].channelId, m_clientToServerMessages[i].GetSegment());
+                        m_clientToServerMessages.RemoveAt(i);
+                    }
                 }
             }
-            m_transport.IterateOutgoing(false);
-
-            for (int i = 0; i < m_serverToClientMessages.Count; i++)
-            {
-                if (m_serverToClientMessages[i].time <= Time.time)
-                {
-                    m_transport.SendToClient(m_serverToClientMessages[i].channelId, m_serverToClientMessages[i].GetSegment(), m_serverToClientMessages[i].connectionId);
-                    m_serverToClientMessages.RemoveAt(i);
-                }
-            }
-            m_transport.IterateOutgoing(true);
+            m_transport.IterateOutgoing(server);            
         }
-        
+
+        private bool CheckReliablePacketLoss(Message msg)
+        {
+            if (CheckPacketLoss())
+            {
+                if (msg.channelId == GetDefaultReliableChannel())
+                {                
+                    msg.AddLatency(m_reliableLatency);
+                    return false;
+                }
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        private bool CheckPacketLoss()
+        {
+            return m_packetloss > 0 && m_random.NextDouble() < m_packetloss;
+        }        
         #endregion
     }
 }
