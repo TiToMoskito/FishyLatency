@@ -21,18 +21,31 @@ namespace BeardedMonkeys
         [Range(0, 1)]
         [SerializeField] float m_latency = 0f;
 
-        [Tooltip("Additional amount of latency for reliable packets only when a packet get's lossed!")]
-        [Range(0, 1)]
-        [SerializeField] float m_reliableLatency = 0.02f;
-
         [Tooltip("How many % should be a packet loss")]
         [Range(0, 1)]
         [SerializeField] double m_packetloss = 0;
+
+        [Header("Reliable")]
+        [Tooltip("Additional amount of latency for reliable packets only when a packet get's lossed!")]
+        [Range(0, 1)]
+        [SerializeField] float m_additionalLatency = 0.02f;
+
+        [Header("Unreliable")]
+        [Tooltip("How often in % should be a packet out of order")]
+        [Range(0, 1)]
+        [SerializeField] double m_outOfOrder = 0;
         #endregion
 
         #region Private
-        private List<Message> m_clientToServerMessages;
-        private List<Message> m_serverToClientMessages;
+        private Message? m_nextToServerReliable = null;
+        private Message? m_nextToServerUnreliable = null;
+        private List<Message> m_toServerReliablePackets;
+        private List<Message> m_toServerUnreliablePackets;
+
+        private Message? m_nextToClientReliable = null;
+        private Message? m_nextToClientUnreliable = null;
+        private List<Message> m_toClientReliablePackets;
+        private List<Message> m_toClientUnreliablePackets;
 
         private struct Message
         {
@@ -46,7 +59,7 @@ namespace BeardedMonkeys
             {
                 this.channelId = channelId;
                 this.connectionId = connectionId;
-                this.time = Time.time + latency;
+                this.time = Time.unscaledTime + latency;
                 this.length = segment.Count;
                 this.message = ByteArrayPool.Retrieve(this.length);
                 Buffer.BlockCopy(segment.Array, segment.Offset, this.message, 0, this.length);                
@@ -55,11 +68,6 @@ namespace BeardedMonkeys
             public ArraySegment<byte> GetSegment()
             {
                 return new ArraySegment<byte>(message, 0, length);
-            }
-
-            public void AddLatency(float latency)
-            {
-                this.time += latency;
             }
         }
 
@@ -70,9 +78,13 @@ namespace BeardedMonkeys
         public override void Initialize(NetworkManager networkManager)
         {
             m_transport.Initialize(networkManager);
-            m_clientToServerMessages = new List<Message>();
-            m_serverToClientMessages = new List<Message>();
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            m_toServerReliablePackets = new List<Message>();
+            m_toServerUnreliablePackets = new List<Message>();
+            m_toClientReliablePackets = new List<Message>();
+            m_toClientUnreliablePackets = new List<Message>();
+#endif
             m_transport.OnClientConnectionState += OnClientConnectionState;
             m_transport.OnServerConnectionState += OnServerConnectionState;
             m_transport.OnRemoteConnectionState += OnRemoteConnectionState;
@@ -346,8 +358,10 @@ namespace BeardedMonkeys
             m_transport.OnServerReceivedData -= OnServerReceivedData;
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            m_clientToServerMessages.Clear();
-            m_serverToClientMessages.Clear();
+            m_toServerReliablePackets.Clear();
+            m_toServerUnreliablePackets.Clear();
+            m_toClientReliablePackets.Clear();
+            m_toClientUnreliablePackets.Clear();
 #endif
 
             //Stops client then server connections.
@@ -387,66 +401,78 @@ namespace BeardedMonkeys
 
         private void Add(byte channelId, ArraySegment<byte> segment, bool server = false, int connectionId = 0)
         {
+            Channel c = (Channel)channelId;
+            List<Message> collection;
+
             if (server)
-                m_serverToClientMessages.Add(new Message(channelId, connectionId, segment, m_latency));
+                collection = (c == Channel.Reliable) ? m_toServerReliablePackets : m_toServerUnreliablePackets;
             else
-                m_clientToServerMessages.Add(new Message(channelId, connectionId, segment, m_latency));
+                collection = (c == Channel.Reliable) ? m_toClientReliablePackets : m_toClientUnreliablePackets;
+            
+            float latency = m_latency;
+            //If dropping check to add extra latency if reliable, or discard if not.
+            if (CheckPacketLoss())
+            {
+                if (c == Channel.Reliable)
+                {
+                    latency += m_additionalLatency; //add extra for resend.
+                }
+                //If not reliable then return the segment array to pool.
+                else
+                {
+                    //ByteArrayPool.Store(segment.Array);
+                    return;
+                }
+            }
+
+            Message msg = new Message(channelId, connectionId, segment, latency);
+            int cCount = collection.Count;
+            if (c == Channel.Unreliable && cCount > 0 && CheckOutOfOrder())
+                collection.Insert(cCount - 1, msg);
+            else
+                collection.Add(msg);
         }
 
         private void Simulation(bool server)
         {
-            if(server)
-            {
-                for (int i = 0; i < m_serverToClientMessages.Count; i++)
-                {
-                    if (CheckReliablePacketLoss(m_serverToClientMessages[i]))
-                        break;
+            List<Message> collection;
 
-                    if (m_serverToClientMessages[i].time <= Time.time)
-                    {
-                        m_transport.SendToClient(m_serverToClientMessages[i].channelId, m_serverToClientMessages[i].GetSegment(), m_serverToClientMessages[i].connectionId);
-                        m_serverToClientMessages.RemoveAt(i);
-                    }
-                }                
-            }
-            else
-            {
-                for (int i = 0; i < m_clientToServerMessages.Count; i++)
-                {
-                    if (CheckReliablePacketLoss(m_clientToServerMessages[i]))
-                        break;
+            collection = (server) ? m_toServerReliablePackets : m_toClientReliablePackets;
+            IterateCollection(collection, server);
+            collection = (server) ? m_toServerUnreliablePackets : m_toClientUnreliablePackets;
+            IterateCollection(collection, server);
 
-                    if (m_clientToServerMessages[i].time <= Time.time)
-                    {
-                        m_transport.SendToServer(m_clientToServerMessages[i].channelId, m_clientToServerMessages[i].GetSegment());
-                        m_clientToServerMessages.RemoveAt(i);
-                    }
-                }
-            }
-            m_transport.IterateOutgoing(server);            
+            m_transport.IterateOutgoing(server);
         }
 
-        private bool CheckReliablePacketLoss(Message msg)
+        private void IterateCollection(List<Message> c, bool server)
         {
-            if (CheckPacketLoss())
+            while (c.Count > 0)
             {
-                if (msg.channelId == GetDefaultReliableChannel())
-                {                
-                    msg.AddLatency(m_reliableLatency);
-                    return false;
-                }
-                return true;
-            }
-            else
-            {
-                return false;
+                Message msg = c[0];
+                //Not enough time has passed.
+                if (Time.unscaledTime < msg.time)
+                    break;
+
+                //Enough time has passed.
+                if(server)
+                    m_transport.SendToClient(msg.channelId, msg.GetSegment(), msg.connectionId);
+                else
+                    m_transport.SendToServer(msg.channelId, msg.GetSegment());
+
+                c.RemoveAt(0);
             }
         }
 
         private bool CheckPacketLoss()
         {
             return m_packetloss > 0 && m_random.NextDouble() < m_packetloss;
-        }        
+        }
+
+        private bool CheckOutOfOrder()
+        {
+            return m_outOfOrder > 0 && m_random.NextDouble() < m_outOfOrder;
+        }
         #endregion
     }
 }

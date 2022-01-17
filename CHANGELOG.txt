@@ -10,3 +10,7 @@
 	- Code restructured
 1.1.1
 	- Adjusted the Reliable Latency variable to 0.02f (was unsaved uploaded)
+1.2.0
+	- Simulation code was restructured (Thanks to Punfish)
+	- Unreliable packets can be out of order no
+	- Fixed Latency is now stable
