@@ -1,4 +1,3 @@
-using FishNet;
 using FishNet.Managing;
 using FishNet.Transporting;
 using FishNet.Utility.Performance;
@@ -13,9 +12,13 @@ namespace BeardedMonkeys
         #region Serialized
         [SerializeField] Transport m_transport;
 
+        [Header("Network Statistics")]
+        [Tooltip("Enable or disable the packet calculation")]
+        [SerializeField] bool m_enabledStatistic = true;
+
         [Header("Settings")]
         [Tooltip("Enable or disable the simulation")]
-        [SerializeField] bool m_enabled = true;
+        [SerializeField] bool m_enabledSimulation = true;        
 
         [Tooltip("Additional amount of latency for all packets")]
         [Range(0, 1)]
@@ -34,6 +37,28 @@ namespace BeardedMonkeys
         [Tooltip("How often in % should be a packet out of order")]
         [Range(0, 1)]
         [SerializeField] double m_outOfOrder = 0;
+        #endregion
+
+        #region Attributes
+        // Sent Packets / bytes per second
+        public int SentPacketsClient => m_sentPackets[0];
+        public int SentPacketsServer => m_sentPackets[1];
+
+        public string SentBytesClient => FormatBytes(m_sentBytes[0]);
+        public string SentBytesServer => FormatBytes(m_sentBytes[1]);
+
+        public int SentBytesRawClient => m_sentBytes[0];
+        public int SentBytesRawServer => m_sentBytes[1];
+
+        // Received Packets / bytes per second
+        public int ReceivedPacketsClient => m_receivedPackets[0];
+        public int ReceivedPacketsServer => m_receivedPackets[1];
+
+        public string ReceivedBytesClient => FormatBytes(m_receivedBytes[0]);
+        public string ReceivedBytesServer => FormatBytes(m_receivedBytes[1]);
+
+        public int ReceivedBytesRawClient => m_receivedBytes[0];
+        public int ReceivedBytesRawServer => m_receivedBytes[1];
         #endregion
 
         #region Private
@@ -72,6 +97,12 @@ namespace BeardedMonkeys
         }
 
         private readonly System.Random m_random = new System.Random();
+
+        // Used to keep track of how many packets get sent / received per second
+        // 0 = Client | 1 = Server
+        private int[] m_sentPackets, m_receivedPackets, m_sentBytes, m_receivedBytes;
+        private int[] m_sentPacketsCount, m_receivedPacketsCount, m_sentBytesCount, m_receivedBytesCount;
+        private float m_calculationTime = 0;
         #endregion
 
         #region Initialization and Unity
@@ -90,6 +121,13 @@ namespace BeardedMonkeys
             m_transport.OnRemoteConnectionState += OnRemoteConnectionState;
             m_transport.OnClientReceivedData += OnClientReceivedData;
             m_transport.OnServerReceivedData += OnServerReceivedData;
+
+            InitializeCalculation();
+        }
+
+        private void Update()
+        {
+            UpdateCalculation();
         }
 
         private void OnDestroy()
@@ -97,7 +135,7 @@ namespace BeardedMonkeys
             m_transport.Shutdown();
             Shutdown();
         }
-        #endregion
+        #endregion        
 
         #region ConnectionStates
         /// <summary>
@@ -214,7 +252,7 @@ namespace BeardedMonkeys
         public override void SendToServer(byte channelId, ArraySegment<byte> segment)
         {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            if(m_enabled)
+            if(m_enabledSimulation)
                 Add(channelId, segment);
             else
                 m_transport.SendToServer(channelId, segment);
@@ -231,7 +269,7 @@ namespace BeardedMonkeys
         public override void SendToClient(byte channelId, ArraySegment<byte> segment, int connectionId)
         {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            if (m_enabled)
+            if (m_enabledSimulation)
                 Add(channelId, segment, true, connectionId);
             else
                 m_transport.SendToClient(channelId, segment, connectionId);
@@ -350,12 +388,14 @@ namespace BeardedMonkeys
         /// Stops both client and server.
         /// </summary>
         public override void Shutdown()
-        {
+        {           
             m_transport.OnClientConnectionState -= OnClientConnectionState;
             m_transport.OnServerConnectionState -= OnServerConnectionState;
             m_transport.OnRemoteConnectionState -= OnRemoteConnectionState;
             m_transport.OnClientReceivedData -= OnClientReceivedData;
             m_transport.OnServerReceivedData -= OnServerReceivedData;
+
+            DeinitializeCalculation();
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             m_toServerReliablePackets.Clear();
@@ -460,6 +500,8 @@ namespace BeardedMonkeys
                 else
                     m_transport.SendToServer(msg.channelId, msg.GetSegment());
 
+                AddSendPacketToCalc(msg.message.Length, server);
+
                 c.RemoveAt(0);
             }
         }
@@ -472,6 +514,109 @@ namespace BeardedMonkeys
         private bool CheckOutOfOrder()
         {
             return m_outOfOrder > 0 && m_random.NextDouble() < m_outOfOrder;
+        }
+        #endregion
+
+        #region Packet Calculation
+        private void InitializeCalculation()
+        {
+            if (m_enabledStatistic)
+            {
+                m_transport.OnClientReceivedData += OnClientReceivedDataCalc;
+                m_transport.OnServerReceivedData += OnServerReceivedDataCalc;
+
+                m_sentPackets = new int[2];
+                m_receivedPackets = new int[2];
+                m_sentBytes = new int[2];
+                m_receivedBytes = new int[2];
+
+                m_sentPacketsCount = new int[2];
+                m_receivedPacketsCount = new int[2];
+                m_sentBytesCount = new int[2];
+                m_receivedBytesCount = new int[2];
+            }
+        }
+
+        private void DeinitializeCalculation()
+        {
+            if (m_enabledStatistic)
+            {
+                m_enabledStatistic = false;
+                m_transport.OnClientReceivedData -= OnClientReceivedDataCalc;
+                m_transport.OnServerReceivedData -= OnServerReceivedDataCalc;
+
+                m_sentPackets = new int[2];
+                m_receivedPackets = new int[2];
+                m_sentBytes = new int[2];
+                m_receivedBytes = new int[2];
+
+                m_sentPacketsCount = new int[2];
+                m_receivedPacketsCount = new int[2];
+                m_sentBytesCount = new int[2];
+                m_receivedBytesCount = new int[2];
+            }
+        }
+
+        private void UpdateCalculation()
+        {
+            if (m_enabledStatistic)
+            {
+                m_calculationTime += Time.deltaTime;
+
+                if ((m_calculationTime % 60) >= 1)
+                {
+                    m_calculationTime = 0;
+
+                    m_sentPackets[0] = m_sentPacketsCount[0];
+                    m_sentBytes[0] = m_sentBytesCount[0];
+                    m_receivedPackets[0] = m_receivedPacketsCount[0];
+                    m_receivedBytes[0] = m_receivedBytesCount[0];
+
+                    m_sentPackets[1] = m_sentPacketsCount[1];
+                    m_sentBytes[1] = m_sentBytesCount[1];
+                    m_receivedPackets[1] = m_receivedPacketsCount[1];
+                    m_receivedBytes[1] = m_receivedBytesCount[1];
+
+                    m_sentPacketsCount = new int[2];
+                    m_receivedPacketsCount = new int[2];
+                    m_sentBytesCount = new int[2];
+                    m_receivedBytesCount = new int[2];
+                }
+            }
+        }
+
+        private void AddSendPacketToCalc(int length, bool asServer)
+        {
+            m_sentPacketsCount[asServer ? 1 : 0]++;
+            m_sentBytesCount[asServer ? 1 : 0] += length;
+        }
+
+        private void AddReceivePacketToCalc(int length, bool asServer)
+        {
+            m_receivedPacketsCount[asServer ? 1 : 0]++;
+            m_receivedBytesCount[asServer ? 1 : 0] += length;
+        }
+
+        private void OnClientReceivedDataCalc(ClientReceivedDataArgs receivedDataArgs)
+        {
+            AddReceivePacketToCalc(receivedDataArgs.Data.Array.Length, false);
+        }
+
+        private void OnServerReceivedDataCalc(ServerReceivedDataArgs receivedDataArgs)
+        {
+            AddReceivePacketToCalc(receivedDataArgs.Data.Array.Length, true);
+        }
+
+        string FormatBytes(long byteCount)
+        {
+            string[] suf = { "b", "kB", "mb", "GB", "TB", "PB", "EB" };
+
+            if (byteCount == 0)
+                return "0 " + suf[0];
+            long bytes = Math.Abs(byteCount);
+            int place = Convert.ToInt32(Math.Floor(Math.Log(bytes, 1024)));
+            double num = Math.Round(bytes / Math.Pow(1024, place), 1);
+            return (Math.Sign(byteCount) * num).ToString() + " " + suf[place];
         }
         #endregion
     }
