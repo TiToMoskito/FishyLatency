@@ -13,14 +13,14 @@ public class NetworkStatistic : MonoBehaviour
     private void OnGUI()
     {
         _style.normal.textColor = Color.magenta;
-        _style.fontSize = 24;
+        _style.fontSize = 30;
         _style.fontStyle = FontStyle.Bold;
 
         float width = 85f;
         float height = 15f;
 
         float horizontal = 10f;
-        float vertical = 10f;
+        float vertical = 300f;
 
         if(InstanceFinder.IsServer)
         {

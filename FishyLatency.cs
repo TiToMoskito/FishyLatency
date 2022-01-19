@@ -251,14 +251,17 @@ namespace BeardedMonkeys
         /// /// <param name="segment">Data to send.</param>
         public override void SendToServer(byte channelId, ArraySegment<byte> segment)
         {
+            if (m_enabledStatistic)
+                AddSendPacketToCalc(segment.Count, false);
+
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            if(m_enabledSimulation)
+            if (m_enabledSimulation)
                 Add(channelId, segment);
             else
                 m_transport.SendToServer(channelId, segment);
 #else
             m_transport.SendToServer(channelId, segment);
-#endif
+#endif            
         }
         /// <summary>
         /// Sends data to a client.
@@ -268,6 +271,9 @@ namespace BeardedMonkeys
         /// <param name="connectionId"></param>
         public override void SendToClient(byte channelId, ArraySegment<byte> segment, int connectionId)
         {
+            if (m_enabledStatistic)
+                AddSendPacketToCalc(segment.Count, true);
+
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             if (m_enabledSimulation)
                 Add(channelId, segment, true, connectionId);
@@ -275,8 +281,9 @@ namespace BeardedMonkeys
                 m_transport.SendToClient(channelId, segment, connectionId);
 #else
             m_transport.SendToClient(channelId, segment, connectionId);
-#endif
+#endif            
         }
+
         #endregion
 
         #region Configuration
@@ -500,8 +507,6 @@ namespace BeardedMonkeys
                 else
                     m_transport.SendToServer(msg.channelId, msg.GetSegment());
 
-                AddSendPacketToCalc(msg.message.Length, server);
-
                 c.RemoveAt(0);
             }
         }
@@ -599,12 +604,12 @@ namespace BeardedMonkeys
 
         private void OnClientReceivedDataCalc(ClientReceivedDataArgs receivedDataArgs)
         {
-            AddReceivePacketToCalc(receivedDataArgs.Data.Array.Length, false);
+            AddReceivePacketToCalc(receivedDataArgs.Data.Count, false);
         }
 
         private void OnServerReceivedDataCalc(ServerReceivedDataArgs receivedDataArgs)
         {
-            AddReceivePacketToCalc(receivedDataArgs.Data.Array.Length, true);
+            AddReceivePacketToCalc(receivedDataArgs.Data.Count, true);
         }
 
         string FormatBytes(long byteCount)
