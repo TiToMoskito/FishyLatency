@@ -62,13 +62,9 @@ namespace BeardedMonkeys
         #endregion
 
         #region Private
-        private Message? m_nextToServerReliable = null;
-        private Message? m_nextToServerUnreliable = null;
         private List<Message> m_toServerReliablePackets;
         private List<Message> m_toServerUnreliablePackets;
 
-        private Message? m_nextToClientReliable = null;
-        private Message? m_nextToClientUnreliable = null;
         private List<Message> m_toClientReliablePackets;
         private List<Message> m_toClientUnreliablePackets;
 
@@ -106,9 +102,9 @@ namespace BeardedMonkeys
         #endregion
 
         #region Initialization and Unity
-        public override void Initialize(NetworkManager networkManager)
+        public override void Initialize(NetworkManager networkManager, int transportIndex)
         {
-            m_transport.Initialize(networkManager);
+            m_transport.Initialize(networkManager, transportIndex);
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             m_toServerReliablePackets = new List<Message>();
@@ -225,9 +221,9 @@ namespace BeardedMonkeys
         /// Handles a ClientReceivedDataArgs.
         /// </summary>
         /// <param name="receivedDataArgs"></param>
-        public override void HandleClientReceivedDataArgs(ClientReceivedDataArgs receivedDataArgs)
+        public override void HandleClientReceivedData(ClientReceivedDataArgs receivedDataArgs)
         {
-            m_transport.HandleClientReceivedDataArgs(receivedDataArgs);
+            m_transport.HandleClientReceivedData(receivedDataArgs);
         }
         /// <summary>
         /// Called when server receives data.
@@ -237,9 +233,9 @@ namespace BeardedMonkeys
         /// Handles a ClientReceivedDataArgs.
         /// </summary>
         /// <param name="receivedDataArgs"></param>
-        public override void HandleServerReceivedDataArgs(ServerReceivedDataArgs receivedDataArgs)
+        public override void HandleServerReceivedData(ServerReceivedDataArgs receivedDataArgs)
         {
-            m_transport.HandleServerReceivedDataArgs(receivedDataArgs);
+            m_transport.HandleServerReceivedData(receivedDataArgs);
         }
         #endregion
 
@@ -418,20 +414,6 @@ namespace BeardedMonkeys
         #endregion
 
         #region Channels
-        /// <summary>
-        /// Returns which channel to use by default for reliable.
-        /// </summary>
-        public override byte GetDefaultReliableChannel()
-        {
-            return m_transport.GetDefaultReliableChannel();
-        }
-        /// <summary>
-        /// Returns which channel to use by default for unreliable.
-        /// </summary>
-        public override byte GetDefaultUnreliableChannel()
-        {
-            return m_transport.GetDefaultUnreliableChannel();
-        }
         /// <summary>
         /// Gets the MTU for a channel. This should take header size into consideration.
         /// For example, if MTU is 1200 and a packet header for this channel is 10 in size, this method should return 1190.
