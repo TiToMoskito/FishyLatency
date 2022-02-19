@@ -99,6 +99,8 @@ namespace BeardedMonkeys
         private int[] m_sentPackets, m_receivedPackets, m_sentBytes, m_receivedBytes;
         private int[] m_sentPacketsCount, m_receivedPacketsCount, m_sentBytesCount, m_receivedBytesCount;
         private float m_calculationTime = 0;
+        private bool m_initialized = false;
+
         #endregion
 
         #region Initialization and Unity
@@ -521,6 +523,8 @@ namespace BeardedMonkeys
                 m_receivedPacketsCount = new int[2];
                 m_sentBytesCount = new int[2];
                 m_receivedBytesCount = new int[2];
+
+                m_initialized = true;
             }
         }
 
@@ -528,6 +532,7 @@ namespace BeardedMonkeys
         {
             if (m_enabledStatistic)
             {
+                m_initialized = false;
                 m_enabledStatistic = false;
                 m_transport.OnClientReceivedData -= OnClientReceivedDataCalc;
                 m_transport.OnServerReceivedData -= OnServerReceivedDataCalc;
@@ -546,7 +551,7 @@ namespace BeardedMonkeys
 
         private void UpdateCalculation()
         {
-            if (m_enabledStatistic)
+            if (m_enabledStatistic && m_initialized)
             {
                 m_calculationTime += Time.deltaTime;
 
