@@ -221,9 +221,9 @@ namespace BeardedMonkeys
         /// Handles a ClientReceivedDataArgs.
         /// </summary>
         /// <param name="receivedDataArgs"></param>
-        public override void HandleClientReceivedData(ClientReceivedDataArgs receivedDataArgs)
+        public override void HandleClientReceivedDataArgs(ClientReceivedDataArgs receivedDataArgs)
         {
-            m_transport.HandleClientReceivedData(receivedDataArgs);
+            m_transport.HandleClientReceivedDataArgs(receivedDataArgs);
         }
         /// <summary>
         /// Called when server receives data.
@@ -233,9 +233,9 @@ namespace BeardedMonkeys
         /// Handles a ClientReceivedDataArgs.
         /// </summary>
         /// <param name="receivedDataArgs"></param>
-        public override void HandleServerReceivedData(ServerReceivedDataArgs receivedDataArgs)
+        public override void HandleServerReceivedDataArgs(ServerReceivedDataArgs receivedDataArgs)
         {
-            m_transport.HandleServerReceivedData(receivedDataArgs);
+            m_transport.HandleServerReceivedDataArgs(receivedDataArgs);
         }
         #endregion
 
